@@ -1,0 +1,158 @@
+---
+title: "PML"
+output: html_document
+date: "2023-07-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+title: "Practical Machine Learning Prediction Assignment"
+
+## Introduction
+This report discusses the creation of a model to characterize activity based on wearable data using the caret package.
+
+```{r}
+library(caret)
+```
+
+
+## Data Acquisition and Preprocessing
+Two sets of data are available:  
+* training  
+* testing  
+
+The data sets are imported as follows:
+```{r}
+### Import the data
+
+training <- read.csv("pml-training.csv", stringsAsFactors=FALSE, na.strings = c("", "#DIV/0", "NA"))
+testing <- read.csv("pml-testing.csv", stringsAsFactors=FALSE, na.strings = c("", "#DIV/0", "NA"))
+
+```
+
+The training data has two issues:  
+* NA's throughout  
+* The first seven columns are arbitrary  
+
+The data is cleaned by:  
+* Removing columns with NA's  
+* Removing columns 1 to 7  
+* Checking for variables with Near Zero Variance in the remaining data  
+    + None of the variables have Near Zero Variance.
+
+```{r}
+### Clean the data
+training_clean <- training[, colSums(is.na(training)) == 0]
+testing_clean <- testing[, colSums(is.na(training)) == 0]
+
+### Remove columns 1-7
+training_clean <- training_clean[-c(1:7)]
+testing_clean <- testing_clean[-c(1:7)]
+
+
+### Check for near zero variance
+nearZeroVar(training_clean)
+```
+
+###  Model Consideration and Testing
+Three different models were considered:  
+* rpart  
+* k nearest neighbors  
+* Random Forest
+
+To test the model validity, the training data was partitioned into a train and test set.
+For each model, the test set was used to evaluate accuracy.
+
+```{r}
+### Partition data
+
+set.seed(3456)
+inTrain <- createDataPartition(training_clean$classe, p=0.7, list=FALSE)
+training_clean_train <- training_clean[inTrain, ]
+training_clean_test <- training_clean[-inTrain, ]
+```
+
+For each model, a training model is created using `training_clean_train` data and then tested with the `training_clean_test` data.
+
+The accuracy of the three models differed significantly:
+
+Model Accuracy  
+rpart 49.1%  
+knn   90.8%  
+rf    99.4%  
+
+The RF model is selected for the prediction portion of the assignment.
+
+The final model of the RF model is called to get the OOB estimate for the error rate:
+OOB estimate of  error rate: 0.71%
+
+The models were cross-validated via the data partitioning, and also as part of the optimization and internal selection that occurs within the caret package.
+
+
+Here, the three models are created.
+After the RF model is completed, the `finalModel` is called to determine the OOB error rate.
+
+```{r}
+### rpart
+m_rpart <- train(classe ~ ., data = training_clean_train, method = "rpart")
+m_rpart
+m_rpart$finalModel
+test_output <- predict(m_rpart, training_clean_test[, -53])
+mean(training_clean_test[, 53] == test_output)
+table(training_clean_test[, 53], test_output)
+
+
+### knn
+m_knn <- train(classe ~ ., data = training_clean_train, method = "knn")
+m_knn
+m_knn$finalModel
+test_output <- predict(m_knn, training_clean_test[, -53])
+mean(training_clean_test[, 53] == test_output)
+table(training_clean_test[, 53], test_output)
+
+### rf
+m_rf <- train(classe ~ ., data = training_clean_train, method = "rf")
+m_rf
+m_rf$finalModel
+test_output <- predict(m_rf, training_clean_test[, -53])
+mean(training_clean_test[, 53] == test_output)
+table(training_clean_test[, 53], test_output)
+
+```
+
+
+The final model is called to see the most important variables in the RF model.
+
+```{r}
+tmp_2 <- m_rf$finalModel
+rfImp <- varImp(m_rf, scale = FALSE)
+plot(rfImp, top = 20)
+
+```
+
+
+A data frame is created to compile the predictions of the three models and compare their output for the final 20-row Test set.
+
+```{r}
+N <- 20
+compiled_results <- data.frame(
+  id = numeric(N),
+  rpart = character(N),
+  knn = character(N),
+  rf = character(N))
+
+compiled_results$id <- 1:20
+test_output_final <- predict(m_rpart, testing_clean[, -53])
+compiled_results$rpart <- test_output_final
+test_output_final <- predict(m_knn, testing_clean[, -53])
+compiled_results$knn <- test_output_final
+test_output_final <- predict(m_rf, testing_clean[, -53])
+compiled_results$rf <- test_output_final
+
+compiled_results
+write.table(compiled_results, "compiled_results.csv")
+
+```
